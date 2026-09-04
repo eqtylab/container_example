@@ -3,7 +3,7 @@
 #   curl localhost:8000/manifest_simple.json
 services:
   simple-py:
-    image: ghcr.io/eqtylab/container_examples/simple-py:latest
+    image: ghcr.io/eqtylab/container_example/simple-py:latest
     build: . # `docker compose up --build` to use the local Dockerfile instead
     environment:
       SERVE_PORT: "8000" # serves /output, and keeps the container running

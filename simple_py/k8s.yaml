@@ -14,7 +14,7 @@ spec:
       runtimeClassName: kata-remote
       containers:
         - name: simple-py
-          image: ghcr.io/eqtylab/container_examples/simple-py:latest
+          image: ghcr.io/eqtylab/container_example/simple-py:latest
           env:
             - name: SERVE_PORT
               value: "8000"

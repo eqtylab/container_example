@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: simple-py
+spec:
+  selector:
+    matchLabels:
+      app: simple-py
+  template:
+    metadata:
+      labels:
+        app: simple-py
+    spec:
+      runtimeClassName: kata-remote
+      containers:
+        - name: simple-py
+          image: ghcr.io/eqtylab/container_examples/simple-py:latest
+          env:
+            - name: SERVE_PORT
+              value: "8000"
+            - name: ENDPOINT
+              value: "http://127.0.0.1:8066"
+          ports:
+            - containerPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: simple-py
+spec:
+  selector:
+    app: simple-py
+  ports:
+    - port: 8000

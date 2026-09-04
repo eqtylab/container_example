@@ -1,0 +1,153 @@
+name: Build and Push Container
+
+on:
+  workflow_dispatch:
+    inputs:
+      example:
+        description: "Which example container to build"
+        type: choice
+        required: true
+        default: simple_py
+        options:
+          - simple_py
+      image_name:
+        description: "Image name under ghcr.io/<owner>/ (blank = the example directory name)"
+        required: false
+        default: ""
+      tag:
+        description: "Extra tag to apply (in addition to the commit SHA)"
+        required: false
+        default: "latest"
+      platforms:
+        description: "Target platforms (comma-separated)"
+        required: false
+        default: "linux/amd64"
+      push:
+        description: "Push to GHCR (uncheck to build only)"
+        type: boolean
+        required: false
+        default: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Discover examples and resolve build paths
+        id: img
+        env:
+          EXAMPLE: ${{ inputs.example }}
+          IMAGE_NAME: ${{ inputs.image_name }}
+        run: |
+          set -euo pipefail
+
+          # Every directory in the repo that holds a Dockerfile is a buildable example.
+          mapfile -t found < <(
+            find . -name Dockerfile -not -path './.git/*' -printf '%h\n' \
+              | sed 's|^\./||' \
+              | sort -u
+          )
+
+          if [ "${#found[@]}" -eq 0 ]; then
+            echo "::error::No Dockerfile found anywhere in the repository"
+            exit 1
+          fi
+
+          printf 'Discovered examples:\n'
+          printf '  %s\n' "${found[@]}"
+
+          # The dropdown is a static list; fail loudly if it has drifted from the repo.
+          match=""
+          for dir in "${found[@]}"; do
+            if [ "$dir" = "$EXAMPLE" ]; then
+              match="$dir"
+              break
+            fi
+          done
+
+          if [ -z "$match" ]; then
+            echo "::error::'$EXAMPLE' has no Dockerfile. Valid examples: ${found[*]}. Update the 'example' dropdown options in this workflow."
+            exit 1
+          fi
+
+          # Default the image name to the example directory, e.g. simple_py -> simple-py
+          name="$IMAGE_NAME"
+          if [ -z "$name" ]; then
+            name="$(basename "$(cd "$match" && pwd)")"
+          fi
+          name="$(echo "$name" | tr '[:upper:]_' '[:lower:]-')"
+
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+
+          {
+            echo "dockerfile=$match/Dockerfile"
+            echo "context=$match"
+            echo "image=${REGISTRY}/${owner}/${name}"
+            echo "discovered=${found[*]}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: ${{ inputs.push }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.img.outputs.image }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.img.outputs.context }}
+          file: ${{ steps.img.outputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Build: \`${{ inputs.example }}\`"
+            echo ''
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Dockerfile | \`${{ steps.img.outputs.dockerfile }}\` |"
+            echo "| Context | \`${{ steps.img.outputs.context }}\` |"
+            echo "| Platforms | \`${{ inputs.platforms }}\` |"
+            echo "| Pushed | \`${{ inputs.push }}\` |"
+            echo ''
+            echo "**Tags**"
+            echo ''
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+            echo ''
+            echo "Examples discovered in this repo: \`${{ steps.img.outputs.discovered }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,12 @@
+# Minimal run of the public GHCR image.
+#   docker compose up
+#   curl localhost:8000/manifest_simple.json
+services:
+  simple-py:
+    image: ghcr.io/eqtylab/container_examples/simple-py:latest
+    build: . # `docker compose up --build` to use the local Dockerfile instead
+    environment:
+      SERVE_PORT: "8000" # serves /output, and keeps the container running
+#      ENDPOINT: "http://127.0.0.1:8066" # VCOMP notary URL; unset falls back to a local Ed25519 key
+    ports:
+      - "8000:8000"

@@ -11,7 +11,7 @@ on:
         options:
           - simple_py
       image_name:
-        description: "Image name under ghcr.io/<owner>/ (blank = the example directory name)"
+        description: "Image name under ghcr.io/<owner>/ (blank = <repo>/<example directory>)"
         required: false
         default: ""
       tag:
@@ -79,12 +79,13 @@ jobs:
             exit 1
           fi
 
-          # Default the image name to the example directory, e.g. simple_py -> simple-py
-          name="$IMAGE_NAME"
+          # Default the image name to <repo>/<example dir>, e.g. container_examples/simple-py
+          name="$(echo "$IMAGE_NAME" | tr '[:upper:]' '[:lower:]')"
           if [ -z "$name" ]; then
-            name="$(basename "$(cd "$match" && pwd)")"
+            repo="$(echo '${{ github.repository }}' | cut -d/ -f2 | tr '[:upper:]' '[:lower:]')"
+            example="$(basename "$(cd "$match" && pwd)" | tr '[:upper:]_' '[:lower:]-')"
+            name="$repo/$example"
           fi
-          name="$(echo "$name" | tr '[:upper:]_' '[:lower:]-')"
 
           owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
 

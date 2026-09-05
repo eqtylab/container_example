@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from functools import partial
@@ -99,6 +100,15 @@ output_dir.mkdir(parents=True, exist_ok=True)
 manifest_path = output_dir / "manifest_simple.json"
 ctx.export(manifest_path)
 logger.info("Manifest written to %s", manifest_path)
+
+# Print the manifest to stdout (whitespace compressed) so it shows up in the log
+with open(manifest_path) as f:
+    manifest = json.load(f)
+print("==========MANIFEST==============")
+print(json.dumps(manifest, separators=(",", ":")))
+print("========MANIFEST END============")
+
+
 purge_statement_store()
 
 # Optionally serve the output directory over HTTP (blocks until stopped)

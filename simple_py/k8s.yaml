@@ -28,7 +28,9 @@ kind: Service
 metadata:
   name: simple-py
 spec:
+  type: LoadBalancer
   selector:
     app: simple-py
   ports:
-    - port: 8000
+    - port: 80
+      targetPort: 8000

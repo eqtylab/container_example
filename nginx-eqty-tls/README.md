@@ -44,6 +44,40 @@ Current limitations:
   after certificate issuance or when missing, without an independent
   expiry check.
 
+## Running without cert-manager
+
+Setting `LE_ISSUER=none` makes the notary the CA. The notary signs a CSR the
+same way the ACME issuer does, so nothing about the key changes: it is still
+generated in-guest, still never leaves the guest, and the TEE binding the image
+exists for is preserved. No `CertificateRequest` is submitted and the
+Kubernetes API is never contacted, so the ServiceAccount, its RBAC, and
+`CR_NAME` go unused. Only the notary is required.
+
+`/tls/tls.crt` becomes the notary leaf plus the notary chain, so NGINX serves a
+complete path to the notary CA, which is also written to `/tls/ca.crt`. The
+leaf's CN stays `eqty-notary:$TLS_HOST` to keep it distinguishable from an ACME
+leaf over the same key; `$TLS_HOST` is in the SAN, which is what TLS clients
+match on. The published bundle is that same leaf, chain and CA — there is no
+second signature to add, because the serving cert is already notary-signed.
+
+The cost is public trust: the notary CA is not in any browser's root store, so
+a general-purpose client rejects the connection. Clients that verify the
+notary's attestation binding already trust that CA, so for them this removes a
+dependency rather than adding a problem. Renewal follows `RENEW_DAYS` as in the
+cert-manager path; if the notary issues short-lived certificates, set
+`RENEW_DAYS` and `IDLE_INTERVAL` well inside their lifetime.
+
+A cert and key supplied by the deployment (a Secret mounted over `TLS_DIR`) are
+honoured instead: the container skips key generation, never overwrites them,
+and cross-signs the key as usual, giving the four-certificate bundle. That path
+does give up the TEE property — a key the container did not generate has been
+outside the guest, so the bundle attests a key the host already had.
+
+Keeping cert-manager but dropping Let's Encrypt needs none of this: point
+`LE_ISSUER` and `LE_ISSUER_KIND` at any other issuer. The issuer must sign the
+container's CSR, so cert-manager's `SelfSigned` issuer is not usable, and the
+resulting certificate must not be self-signed.
+
 ## Deployment
 
 Use [the example manifest](../manifests/gpt-oss-20b.yaml) for configuration,
@@ -59,7 +93,8 @@ volumes, and RBAC. It supplies:
 
 The cluster also needs cert-manager, an issuer with a working challenge
 solver and request approval, and the EQTY notary. Concurrent instances
-in one namespace need distinct `CR_NAME` values.
+in one namespace need distinct `CR_NAME` values. With `LE_ISSUER=none` only
+the notary is required.
 
 **Host protection depends on the deployment:** a confidential PodVM,
 in-guest memory storage, and a Kata agent policy blocking host-driven exec
@@ -72,7 +107,7 @@ The bundle alone does not prove TEE residency.
 | Variable | Default | Purpose |
 |---|---|---|
 | `TLS_HOST` | Required | Certificate DNS name |
-| `LE_ISSUER` | `letsencrypt` | cert-manager issuer name |
+| `LE_ISSUER` | `letsencrypt` | cert-manager issuer name; `none` makes the notary the CA |
 | `LE_ISSUER_KIND` | `ClusterIssuer` | Use `Issuer` for a namespaced issuer |
 | `NOTARY_URL` | `http://127.0.0.1:8066` | Notary endpoint |
 | `CR_NAME` | `vnim-tls` | Request name; deleted and recreated on issuance |

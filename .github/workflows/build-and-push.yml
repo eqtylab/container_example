@@ -10,6 +10,7 @@ on:
         default: simple_py
         options:
           - simple_py
+          - nginx-eqty-tls
       image_name:
         description: "Image name under ghcr.io/<owner>/ (blank = <repo>/<example directory>)"
         required: false

@@ -1,9 +1,11 @@
 import json
 import logging
 import os
+import time
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.request import urlopen
 
 from eqty_sdk import (
     CID,
@@ -31,8 +33,35 @@ ctx = Context.new("simple-py")
 config = init(default_context=ctx)
 config = config.set_store_all_blobs(True)
 
+
+def notary_get(path):
+    with urlopen(f"{ENDPOINT}{path}", timeout=10) as resp:
+        return json.load(resp)
+
+
+def notary_identity_ready():
+    did = notary_get("/get_dids").get("registeredBy")
+    for statement in notary_get("/v1/did_registration").get("statements", {}).values():
+        subject = statement.get("credential", {}).get("credentialSubject", {})
+        if subject.get("id") != did:
+            continue
+        identity = subject.get("identity", {})
+        if identity.get("type") != "CoCoPodVmV1":
+            return True
+        if any(c.get("image") and c.get("imageDigest") for c in identity.get("containers", [])):
+            return True
+    return False
+
+
 DESCRIPTION="My Ed25519 signing key for integrity statements."
 if ENDPOINT:
+    # waits up to 120 s (60 polls x 2 s) for the notary to list the container image
+    for _ in range(60):
+        if notary_identity_ready():
+            break
+        time.sleep(2)
+    else:
+        raise RuntimeError("notary registration never listed the container image and imageDigest")
     signer = Signer.vcomp_notary(ENDPOINT)
     DESCRIPTION="VCOMP Notary Signer"
 else:
